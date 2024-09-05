@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+	  <script defer src="https://umami.dill.moe/script.js" data-website-id="e061f15c-522b-498d-8d05-291da9e7e458"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hash Files and Rename</title>
+    <style>
+        body {
+            background-color: #121212;
+            color: #ffffff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            font-family: Arial, sans-serif;
+        }
+        #rename-form {
+            text-align: center;
+            background-color: #1e1e1e;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            position: relative;
+        }
+        label, input, button {
+            display: block;
+            width: 100%;
+            margin: 10px 0;
+        }
+        button {
+            background-color: #6200ea;
+            color: #ffffff;
+            border: none;
+            padding: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #3700b3;
+        }
+        #loading {
+            display: none;
+            margin-top: 20px;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid #ffffff;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div id="rename-form">
+        <h1>Hash Files and Rename</h1>
+        <form id="form">
+            <label for="file">Select Files to Rename:</label>
+            <input type="file" id="file" name="file" multiple required>
+            <button type="submit">Hash and Rename</button>
+        </form>
+        <div id="loading">
+            <div class="spinner"></div>
+            <span>Hashing and Renaming...</span>
+        </div>
+    </div>
+    <script>
+        document.getElementById('form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+        
+            const fileInput = document.getElementById('file');
+            const files = fileInput.files;
+            if (!files.length) {
+                alert('Please select at least one file.');
+                return;
+            }
+        
+            document.getElementById('loading').style.display = 'flex';
+        
+            for (const file of files) {
+                const fileData = await readFileAsArrayBuffer(file);
+                const hash = await computeFileHash(fileData);
+                const extension = getFileExtension(file.name);
+                const newFilename = `hashed_${hash}${extension}`;
+        
+                downloadRenamedFile(fileData, newFilename);
+            }
+
+            document.getElementById('loading').style.display = 'none';
+        });
+
+        // Helper function to read the file as ArrayBuffer
+        function readFileAsArrayBuffer(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = () => reject(reader.error);
+                reader.readAsArrayBuffer(file);
+            });
+        }
+
+        // Function to compute the hash (SHA-256)
+        async function computeFileHash(fileData) {
+            const hashBuffer = await crypto.subtle.digest('SHA-256', fileData);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(byte => byte.toString(16).padStart(2, '0')).join('');
+        }
+
+        // Helper function to get file extension
+        function getFileExtension(filename) {
+            return filename.slice(filename.lastIndexOf('.'));
+        }
+
+        // Helper function to trigger download with renamed file
+        function downloadRenamedFile(fileData, filename) {
+            const blob = new Blob([fileData], { type: 'application/octet-stream' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        }
+    </script>
+</body>
+</html>
