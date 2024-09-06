@@ -96,7 +96,6 @@
     </div>
     <script>
         const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB per chunk
-        const SIZE_LIMIT = 50 * 1024 * 1024; // Files above 50MB will be chunked
 
         document.getElementById('form').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -115,46 +114,33 @@
             const zip = new JSZip();
             let processedFiles = 0;
             let totalFiles = files.length;
+            let totalSize = files.reduce((acc, file) => acc + file.size, 0);
+            let processedSize = 0;
 
             try {
                 for (const file of files) {
                     statusText.textContent = `Processing ${file.name}...`;
                     const fileData = await readFileAsArrayBuffer(file);
+                    const chunks = splitFileIntoChunks(fileData);
 
-                    if (file.size > SIZE_LIMIT) {
-                        // Split large files into chunks, hash each chunk, and rename
-                        const chunks = splitFileIntoChunks(fileData);
-                        for (let j = 0; j < chunks.length; j++) {
-                            const chunk = chunks[j];
-                            const hash = await computeFileHash(chunk);
-                            const extension = getFileExtension(file.name);
-                            const newFilename = `hashed_${hash}_part${j + 1}${extension}`;
-                            zip.file(newFilename, chunk);
-                        }
-                    } else {
-                        // If within size limit, hash the entire file and rename
-                        const hash = await computeFileHash(fileData);
+                    for (let j = 0; j < chunks.length; j++) {
+                        const chunk = chunks[j];
+                        const hash = await computeFileHash(chunk);
                         const extension = getFileExtension(file.name);
-                        const newFilename = `hashed_${hash}${extension}`;
-                        zip.file(newFilename, fileData);
+                        const newFilename = chunks.length > 1 
+                            ? `hashed_${hash}_part${j + 1}${extension}`
+                            : `hashed_${hash}${extension}`;
+                        zip.file(newFilename, chunk);
+
+                        processedSize += chunk.byteLength;
+                        updateProgress(processedSize, totalSize);
                     }
 
                     processedFiles++;
-                    const progress = Math.round((processedFiles / totalFiles) * 100);
-                    progressBar.style.width = `${progress}%`;
-                    progressBar.textContent = `${progress}%`;
                 }
 
                 statusText.textContent = 'Compressing files...';
-                // Generate the .tgz file
-                const zipContent = await zip.generateAsync({ type: 'uint8array' });
-                const compressed = pako.gzip(zipContent);
-
-                const randomString = generateRandomString(8);
-                const tgzFilename = `hashed_files_${randomString}.tgz`;
-
-                downloadCompressedFile(compressed, tgzFilename);
-                statusText.textContent = 'Download complete!';
+                await compressAndDownload(zip, statusText, progressBar);
 
             } catch (error) {
                 alert('Hashing and renaming failed.');
@@ -168,7 +154,6 @@
             }
         });
 
-        // Helper function to read the file as ArrayBuffer
         function readFileAsArrayBuffer(file) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
@@ -178,7 +163,6 @@
             });
         }
 
-        // Helper function to split file into chunks
         function splitFileIntoChunks(fileData) {
             const chunks = [];
             let currentIndex = 0;
@@ -192,19 +176,39 @@
             return chunks;
         }
 
-        // Helper function to compute file hash (SHA-256)
         async function computeFileHash(fileData) {
             const hashBuffer = await crypto.subtle.digest('SHA-256', fileData);
             const hashArray = Array.from(new Uint8Array(hashBuffer));
             return hashArray.map(byte => byte.toString(16).padStart(2, '0')).join('');
         }
 
-        // Helper function to get file extension
         function getFileExtension(filename) {
             return filename.slice(filename.lastIndexOf('.'));
         }
 
-        // Helper function to download compressed .tgz file
+        async function compressAndDownload(zip, statusText, progressBar) {
+            const zipContent = await zip.generateAsync({ 
+                type: 'uint8array',
+                compression: 'DEFLATE',
+                compressionOptions: { level: 6 },
+            }, (metadata) => {
+                if (metadata.percent) {
+                    const progress = Math.round(metadata.percent);
+                    progressBar.style.width = `${progress}%`;
+                    progressBar.textContent = `${progress}%`;
+                }
+            });
+
+            statusText.textContent = 'Finalizing...';
+            const compressed = pako.gzip(zipContent);
+
+            const randomString = generateRandomString(8);
+            const tgzFilename = `hashed_files_${randomString}.tgz`;
+
+            downloadCompressedFile(compressed, tgzFilename);
+            statusText.textContent = 'Download complete!';
+        }
+
         function downloadCompressedFile(data, filename) {
             const blob = new Blob([data], { type: 'application/gzip' });
             const url = window.URL.createObjectURL(blob);
@@ -216,7 +220,6 @@
             a.remove();
         }
 
-        // Function to generate random 8-digit string
         function generateRandomString(length) {
             const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
             let result = '';
@@ -225,6 +228,13 @@
                 result += chars[randomIndex];
             }
             return result;
+        }
+
+        function updateProgress(processed, total) {
+            const progress = Math.round((processed / total) * 100);
+            const progressBar = document.getElementById('progress');
+            progressBar.style.width = `${progress}%`;
+            progressBar.textContent = `${progress}%`;
         }
     </script>
 </body>
