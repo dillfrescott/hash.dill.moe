@@ -80,6 +80,7 @@
     </div>
     <script>
         const BATCH_SIZE = 50; // Number of files to process at a time
+        const MAX_BATCH_SIZE_MB = 50; // Maximum batch size in MB
 
         document.getElementById('form').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -93,50 +94,76 @@
 
             document.getElementById('loading').style.display = 'flex';
 
-            for (let i = 0; i < files.length; i += BATCH_SIZE) {
-                const batch = files.slice(i, i + BATCH_SIZE);
-                if (batch.length === 1) {
-                    // If only one file in the batch, hash and rename it
-                    const file = batch[0];
-                    const fileData = await readFileAsArrayBuffer(file);
-                    const hash = await computeFileHash(fileData);
-                    const extension = getFileExtension(file.name);
-                    const newFilename = `hashed_${hash}${extension}`;
+            let currentBatch = [];
+            let currentBatchSize = 0; // Track the current batch size in MB
 
-                    downloadRenamedFile(fileData, newFilename);
-                } else {
-                    // If multiple files in the batch, create a .tgz archive
-                    const zip = new JSZip();
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const fileSizeMB = file.size / (1024 * 1024); // Convert file size to MB
 
-                    for (const file of batch) {
-                        const fileData = await readFileAsArrayBuffer(file);
-                        const hash = await computeFileHash(fileData);
-                        const extension = getFileExtension(file.name);
-                        const newFilename = `hashed_${hash}${extension}`;
-                        
-                        zip.file(newFilename, fileData);
-                    }
+                // Check if adding the file exceeds the batch size
+                if (currentBatch.length >= BATCH_SIZE || currentBatchSize + fileSizeMB > MAX_BATCH_SIZE_MB) {
+                    // Process the current batch
+                    await processBatch(currentBatch);
 
-                    // Generate the .tgz file
-                    const zipContent = await zip.generateAsync({ type: "uint8array" });
-                    const compressed = pako.gzip(zipContent);
-                    
-                    const randomString = generateRandomString(8);
-                    const tgzFilename = `hashed_files_${randomString}.tgz`;
-
-                    const blob = new Blob([compressed], { type: 'application/gzip' });
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = tgzFilename;
-                    document.body.appendChild(a);
-                    a.click();
-                    a.remove();
+                    // Reset the batch
+                    currentBatch = [];
+                    currentBatchSize = 0;
                 }
+
+                // Add the file to the current batch
+                currentBatch.push(file);
+                currentBatchSize += fileSizeMB;
+            }
+
+            // Process any remaining files in the last batch
+            if (currentBatch.length > 0) {
+                await processBatch(currentBatch);
             }
 
             document.getElementById('loading').style.display = 'none';
         });
+
+        async function processBatch(batch) {
+            if (batch.length === 1) {
+                // If only one file in the batch, hash and rename it
+                const file = batch[0];
+                const fileData = await readFileAsArrayBuffer(file);
+                const hash = await computeFileHash(fileData);
+                const extension = getFileExtension(file.name);
+                const newFilename = `hashed_${hash}${extension}`;
+
+                downloadRenamedFile(fileData, newFilename);
+            } else {
+                // If multiple files in the batch, create a .tgz archive
+                const zip = new JSZip();
+
+                for (const file of batch) {
+                    const fileData = await readFileAsArrayBuffer(file);
+                    const hash = await computeFileHash(fileData);
+                    const extension = getFileExtension(file.name);
+                    const newFilename = `hashed_${hash}${extension}`;
+                    
+                    zip.file(newFilename, fileData);
+                }
+
+                // Generate the .tgz file
+                const zipContent = await zip.generateAsync({ type: "uint8array" });
+                const compressed = pako.gzip(zipContent);
+                
+                const randomString = generateRandomString(8);
+                const tgzFilename = `hashed_files_${randomString}.tgz`;
+
+                const blob = new Blob([compressed], { type: 'application/gzip' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = tgzFilename;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            }
+        }
 
         // Helper function to read the file as ArrayBuffer
         function readFileAsArrayBuffer(file) {
