@@ -79,11 +79,13 @@
         </div>
     </div>
     <script>
+        const BATCH_SIZE = 50; // Number of files to process at a time
+
         document.getElementById('form').addEventListener('submit', async (e) => {
             e.preventDefault();
 
             const fileInput = document.getElementById('file');
-            const files = fileInput.files;
+            const files = Array.from(fileInput.files);
             if (!files.length) {
                 alert('Please select at least one file.');
                 return;
@@ -91,43 +93,46 @@
 
             document.getElementById('loading').style.display = 'flex';
 
-            if (files.length === 1) {
-                // If only one file, hash and rename it
-                const file = files[0];
-                const fileData = await readFileAsArrayBuffer(file);
-                const hash = await computeFileHash(fileData);
-                const extension = getFileExtension(file.name);
-                const newFilename = `hashed_${hash}${extension}`;
-
-                downloadRenamedFile(fileData, newFilename);
-            } else {
-                // If multiple files, create a .tgz archive
-                const zip = new JSZip();
-
-                for (const file of files) {
+            for (let i = 0; i < files.length; i += BATCH_SIZE) {
+                const batch = files.slice(i, i + BATCH_SIZE);
+                if (batch.length === 1) {
+                    // If only one file in the batch, hash and rename it
+                    const file = batch[0];
                     const fileData = await readFileAsArrayBuffer(file);
                     const hash = await computeFileHash(fileData);
                     const extension = getFileExtension(file.name);
                     const newFilename = `hashed_${hash}${extension}`;
+
+                    downloadRenamedFile(fileData, newFilename);
+                } else {
+                    // If multiple files in the batch, create a .tgz archive
+                    const zip = new JSZip();
+
+                    for (const file of batch) {
+                        const fileData = await readFileAsArrayBuffer(file);
+                        const hash = await computeFileHash(fileData);
+                        const extension = getFileExtension(file.name);
+                        const newFilename = `hashed_${hash}${extension}`;
+                        
+                        zip.file(newFilename, fileData);
+                    }
+
+                    // Generate the .tgz file
+                    const zipContent = await zip.generateAsync({ type: "uint8array" });
+                    const compressed = pako.gzip(zipContent);
                     
-                    zip.file(newFilename, fileData);
+                    const randomString = generateRandomString(8);
+                    const tgzFilename = `hashed_files_${randomString}.tgz`;
+
+                    const blob = new Blob([compressed], { type: 'application/gzip' });
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = tgzFilename;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
                 }
-
-                // Generate the .tgz file
-                const zipContent = await zip.generateAsync({ type: "uint8array" });
-                const compressed = pako.gzip(zipContent);
-                
-                const randomString = generateRandomString(8);
-                const tgzFilename = `hashed_files_${randomString}.tgz`;
-
-                const blob = new Blob([compressed], { type: 'application/gzip' });
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = tgzFilename;
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
             }
 
             document.getElementById('loading').style.display = 'none';
