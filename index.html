@@ -57,14 +57,14 @@
             width: 24px;
             height: 24px;
             animation: spin 1s linear infinite;
-            margin-bottom: 10px; /* Add space below the spinner */
+            margin-bottom: 10px;
         }
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
         #status {
-            margin-bottom: 10px; /* Add space below the status text */
+            margin-bottom: 10px;
         }
         #progress-bar {
             width: 100%;
@@ -79,6 +79,16 @@
             line-height: 20px;
             color: white;
         }
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 10px;
+        }
+        .checkbox-container input {
+            margin-right: 5px;
+            width: auto;
+        }
     </style>
 </head>
 <body>
@@ -87,6 +97,10 @@
         <form id="form">
             <label for="file">Select Files to Hash and Rename:</label>
             <input type="file" id="file" name="file" multiple required>
+            <div class="checkbox-container">
+                <input type="checkbox" id="disable-gzip" name="disable-gzip">
+                <label for="disable-gzip">Disable gzip (create .tar instead of .tgz)</label>
+            </div>
             <button type="submit">Hash and Rename</button>
         </form>
         <div id="loading">
@@ -113,6 +127,7 @@
             document.getElementById('loading').style.display = 'flex';
             const progressBar = document.getElementById('progress');
             const statusText = document.getElementById('status');
+            const disableGzip = document.getElementById('disable-gzip').checked;
 
             const zip = new JSZip();
             let processedFiles = 0;
@@ -142,8 +157,8 @@
                     processedFiles++;
                 }
 
-                statusText.textContent = 'Compressing files...';
-                await compressAndDownload(zip, statusText, progressBar);
+                statusText.textContent = disableGzip ? 'Creating TAR...' : 'Compressing files...';
+                await compressAndDownload(zip, statusText, progressBar, disableGzip);
 
             } catch (error) {
                 alert('Hashing and renaming failed.');
@@ -189,7 +204,7 @@
             return filename.slice(filename.lastIndexOf('.'));
         }
 
-        async function compressAndDownload(zip, statusText, progressBar) {
+        async function compressAndDownload(zip, statusText, progressBar, disableGzip) {
             const zipContent = await zip.generateAsync({ 
                 type: 'uint8array',
                 compression: 'DEFLATE',
@@ -203,17 +218,20 @@
             });
 
             statusText.textContent = 'Finalizing...';
-            const compressed = pako.gzip(zipContent);
+            let finalContent = zipContent;
+            if (!disableGzip) {
+                finalContent = pako.gzip(zipContent);
+            }
 
             const randomString = generateRandomString(8);
-            const tgzFilename = `hashed_files_${randomString}.tgz`;
+            const filename = disableGzip ? `hashed_files_${randomString}.tar` : `hashed_files_${randomString}.tgz`;
 
-            downloadCompressedFile(compressed, tgzFilename);
+            downloadCompressedFile(finalContent, filename);
             statusText.textContent = 'Download complete!';
         }
 
         function downloadCompressedFile(data, filename) {
-            const blob = new Blob([data], { type: 'application/gzip' });
+            const blob = new Blob([data], { type: 'application/octet-stream' });
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
